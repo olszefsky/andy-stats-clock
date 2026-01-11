@@ -39,6 +39,7 @@ The card automatically adjusts all values based on whether the current time is A
 ✔ Three animated clock hands
 
 Each with independent configuration:
+
 ⏰ Hour hand
 * Follows system time
 * Smooth or discrete movement
