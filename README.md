@@ -30,12 +30,14 @@ Each ring can be configured independently with:
  * Auto-fallback when future values are unknown
 
 ✔ Multiple time modes
+
 Supports:
 * 24h mode (00–23, full-day representation)
 * 12h mode (AM/PM logic with correct data slicing)
 The card automatically adjusts all values based on whether the current time is AM or PM.
 
 ✔ Three animated clock hands
+
 Each with independent configuration:
 ⏰ Hour hand
 * Follows system time
@@ -43,10 +45,12 @@ Each with independent configuration:
 * Color, width, opacity
 
 🕒 Minute hand
+
 * Full smooth animation
 * Color, width, opacity
 
 ⏱ Second hand
+
 * Ultra-smooth, continuously animated
 * Color, width, opacity
   
@@ -55,6 +59,7 @@ All hands can optionally share a central hub, using a configurable style + color
 
 
 ✔ Auto-history for normal sensors
+
 If a sensor does not expose hourly arrays (like normal temperature/consumption sensors):
 
 The card will:
@@ -65,6 +70,7 @@ The card will:
 5. Cache results and avoid overloading HA
 
 ✔ CenterWatch (Center display)
+
 Add multiple center elements such as:
 * Sensor state
 * Time
@@ -73,6 +79,7 @@ Add multiple center elements such as:
 * Dynamic templates (<state>, <unit>, <name>, <time>)
 
 ✔ Bottom information / badges
+
 Add any number of bottom items:
 * Entities
 * Static text
@@ -80,6 +87,7 @@ Add any number of bottom items:
 * Formatted values
 
 ✔ Full visual editor included
+
 No YAML needed.
 Features:
 * Collapsible menus for cleaner editing
@@ -89,9 +97,11 @@ Features:
 * Safe entity search dropdowns (non-blocking)
 
 ✔ Minute ticks / outer markers
+
 Optional visual ticks around the outer ring for precise time alignment.
 
 🧠 Ideal Use Cases
+
 * Energy price visualization (Nordpool / Tibber)
 * Electricity consumption patterns
 * Heating system temperatures
