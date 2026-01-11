@@ -53,15 +53,21 @@
     end_angle: 352.5,
     radius: 45,
     layer_gap: 2,
-    hands_center_pivot: false, // NY: gemensam hub i mitten
+    hands_center_pivot: false, // shared hub
 
-    // Bakåtkompatibel sweeper (hour hand)
+    // Outer minute ticks
+    outer_ticks: {
+      enabled: false,
+    },
+
+    // Backwards compatible sweeper (hour hand)
     sweeper: {
       enabled: true,
       use_system_time: true,
       entity: "",
       color: "#FFFFFF",
       width: 1.5,
+      opacity: 1,
     },
     hour_sweeper: {
       enabled: true,
@@ -69,6 +75,7 @@
       entity: "",
       color: "#FFFFFF",
       width: 1.5,
+      opacity: 1,
     },
 
     // Minute hand
@@ -76,6 +83,7 @@
       enabled: false,
       color: "#FFFFFF",
       width: 1.2,
+      opacity: 1,
     },
 
     // Second hand
@@ -83,6 +91,14 @@
       enabled: false,
       color: "#FF4081",
       width: 1.0,
+      opacity: 1,
+    },
+
+    // Hub in center (when hands_center_pivot = true)
+    hub: {
+      color: "rgba(255,255,255,0.9)",
+      radius: 2.3,
+      opacity: 1,
     },
 
     style: {
@@ -187,7 +203,7 @@
     const to = Number(chosen.to);
     if (isNaN(from) || isNaN(to) || from === to) return cf;
 
-    const t = Math.max(0, Math.min(1, (value - from) / (to - from)));
+    const t = Math.max(0, Math.min(1, (value - from) / (to - from || 1)));
     return lerpColor(cf, ct, t);
   }
 
@@ -198,6 +214,41 @@
     const t = Math.max(0, Math.min(1, (value - min) / (max - min || 1)));
     return lerpColor(from, to, t);
   }
+  
+  function sliceValuesForClockMode(values, cfg) {
+  const mode = cfg.clock_mode || "24h";
+  if (mode !== "12h") return values;
+  if (!values || !values.length) return values;
+
+  const len = values.length;
+
+  // Om vi har data för ett helt dygn (eller multiplar av 24)
+  // tolkar vi det som tidslinje över dygnet (t.ex. Nordpool, Tibber,
+  // 24h-förbrukning, 96 x 15-min osv).
+  if (len >= 24 && len % 24 === 0) {
+    const itemsPerHour = len / 24; // 1 = timvärden, 4 = 15-min, osv
+    const now = new Date();
+    const hour = now.getHours(); // 0–23
+    const isPm = hour >= 12;
+
+    const startHour = isPm ? 12 : 0;   // 00–11 eller 12–23
+    const endHour = isPm ? 24 : 12;
+
+    const startIndex = startHour * itemsPerHour;
+    const endIndex = endHour * itemsPerHour;
+
+    return values.slice(startIndex, endIndex);
+  }
+
+  // Annars: generisk historik – visa de senaste 12 värdena (upp till nu)
+  if (len > 12) {
+    return values.slice(len - 12);
+  }
+
+  // Kortare listor: visa allt
+  return values;
+}
+
 
   function getEntityState(hass, entityId) {
     if (!hass || !entityId) return null;
@@ -209,13 +260,19 @@
     const attr = attribute || "today";
     const raw = stateObj.attributes[attr];
     if (!Array.isArray(raw)) return [];
-    if (!valuePath) return raw.map((v) => Number(v));
+    if (!valuePath) return raw.map((v) => (v == null ? null : Number(v)));
     return raw.map((item) => {
       if (item && typeof item === "object" && valuePath in item) {
-        return Number(item[valuePath]);
+        const val = item[valuePath];
+        return val == null ? null : Number(val);
       }
-      return Number(item);
+      return item == null ? null : Number(item);
     });
+  }
+
+  // Always system hour (for AM/PM, 12h slicing)
+  function getSystemHour() {
+    return new Date().getHours();
   }
 
   // ----------------------------------------------------------
@@ -316,7 +373,7 @@
         if (!config) throw new Error("Configuration is required");
         this._config = deepMerge(StatsClockDefaultConfig, config);
 
-        // Bakåtkompatibilitet: om gammal "sweeper" finns men ingen hour_sweeper → kopiera
+        // Backwards compatibility: copy old sweeper → hour_sweeper
         if (config.sweeper && !config.hour_sweeper) {
           this._config.hour_sweeper = deepMerge(
             this._config.hour_sweeper || {},
@@ -351,25 +408,10 @@
 
       disconnectedCallback() {}
 
-      _getCurrentHourForClock(cfg, hass) {
-        const sw = cfg.hour_sweeper || cfg.sweeper || {};
-        if (sw.use_system_time || !sw.entity) {
-          const now = new Date();
-          return now.getHours();
-        }
-        const st = getEntityState(hass, sw.entity);
-        if (st && !isNaN(Number(st.state))) {
-          const v = Number(st.state);
-          return ((v % 24) + 24) % 24;
-        }
-        const now = new Date();
-        return now.getHours();
-      }
-
-      _getPeriodString(cfg, hass) {
+      _getPeriodString(cfg) {
         const mode = cfg.clock_mode || "24h";
         if (mode !== "12h") return "";
-        const h = this._getCurrentHourForClock(cfg, hass);
+        const h = getSystemHour();
         return h < 12 ? "AM" : "PM";
       }
 
@@ -427,25 +469,17 @@
                 buckets[h] = v;
               });
 
-              let last = null;
-              for (let h = 0; h < 24; h++) {
-                if (buckets[h] == null) {
-                  buckets[h] = last;
-                } else {
-                  last = buckets[h];
-                }
-              }
               const hasAny = buckets.some((v) => v != null && !isNaN(v));
               let finalValues;
               if (!hasAny) {
+                // No history at all: fallback to current state repeated
                 const cur = Number(stateObj.state);
                 finalValues = isNaN(cur)
                   ? []
                   : new Array(24).fill(cur);
               } else {
-                finalValues = buckets.map((v) =>
-                  v == null || isNaN(v) ? Number(stateObj.state) : Number(v)
-                );
+                // Important: keep nulls for hours with no data (future) so ring is empty there.
+                finalValues = buckets;
               }
 
               this._historyCache[cacheKey] = {
@@ -628,12 +662,16 @@
           />
         `;
 
-        // Ring-lager
+        // Outer minute ticks
+        if (cfg.outer_ticks && cfg.outer_ticks.enabled) {
+          svg += this._renderOuterTicksSvg(cfg, maxRadius - 1);
+        }
+
+        // Ring layers
         layers.forEach((layer) => {
           svg += this._renderLayerSvg(cfg, layer);
         });
 
-        // Tim-/minut-/sekundvisare + gemensam hub
         const useCenterPivot = cfg.hands_center_pivot === true;
 
         if (cfg.show_hour_labels !== false) {
@@ -652,16 +690,23 @@
           svg += this._renderSecondSweeperSvgSmooth(cfg, secondSweeper, maxRadius - 2, useCenterPivot);
         }
 
+        // Hub
         if (useCenterPivot) {
+          const hub = cfg.hub || {};
+          const hubRadius = hub.radius ?? 2.3;
+          const hubOpacity = hub.opacity ?? 1;
+          const hubColor = hub.color || "rgba(255,255,255,0.9)";
           svg += `
-            <circle
-              cx="0"
-              cy="0"
-              r="2.3"
-              fill="rgba(0,0,0,0.7)"
-              stroke="rgba(255,255,255,0.9)"
-              stroke-width="0.5"
-            ></circle>
+            <g opacity="${hubOpacity}">
+              <circle
+                cx="0"
+                cy="0"
+                r="${hubRadius}"
+                fill="rgba(0,0,0,0.7)"
+                stroke="${hubColor}"
+                stroke-width="0.5"
+              ></circle>
+            </g>
           `;
         }
 
@@ -691,10 +736,99 @@
 
       // ---- building data ----
 
-      _buildLayerData(cfg, hass) {
+_buildLayerData(cfg, hass) {
+  const layers = [];
+  (cfg.layers || []).forEach((lc, index) => {
+    const baseRadius =
+      (lc.radius != null ? lc.radius : cfg.radius) -
+      index * ((lc.thickness || 6) + (cfg.layer_gap || 2));
+    const thickness = lc.thickness || 6;
+    const rOuter = baseRadius;
+    const rInner = baseRadius - thickness;
+
+    const stateObj = getEntityState(hass, lc.entity);
+    if (!stateObj) return;
+
+    // ---- Hämta råvärden för lagret ----
+    let values = this._resolveLayerValues(lc, hass, stateObj);
+    if (!values || !values.length) return;
+
+    // ---- Anpassa till 12h / 24h-läge ----
+    values = sliceValuesForClockMode(values, cfg);
+    if (!values || !values.length) return;
+
+    const unit =
+      stateObj.attributes.unit_of_measurement ||
+      stateObj.attributes.price_unit ||
+      stateObj.attributes.unit ||
+      "";
+
+    let min = null;
+    let max = null;
+    let sum = 0;
+    let count = 0;
+    let minIndex = -1;
+    let maxIndex = -1;
+
+    values.forEach((v, i) => {
+      const num = Number(v);
+      if (isNaN(num)) return;
+      if (min === null || num < min) {
+        min = num;
+        minIndex = i;
+      }
+      if (max === null || num > max) {
+        max = num;
+        maxIndex = i;
+      }
+      sum += num;
+      count += 1;
+    });
+
+    const avg = count > 0 ? sum / count : null;
+    let avgIndex = -1;
+    if (avg != null) {
+      let bestDiff = null;
+      values.forEach((v, i) => {
+        const num = Number(v);
+        if (isNaN(num)) return;
+        const diff = Math.abs(num - avg);
+        if (bestDiff === null || diff < bestDiff) {
+          bestDiff = diff;
+          avgIndex = i;
+        }
+      });
+    }
+
+    const segmentCount =
+      lc.segment_count && Number(lc.segment_count) > 0
+        ? Number(lc.segment_count)
+        : values.length;
+
+    layers.push({
+      cfg: lc,
+      values,
+      min,
+      max,
+      avg,
+      minIndex,
+      maxIndex,
+      avgIndex,
+      rInner,
+      rOuter,
+      unit,
+      segmentCount,
+    });
+  });
+  return layers;
+}
+
+
+
+      _buildLayerDataOld(cfg, hass) {
         const layers = [];
         const clockMode = cfg.clock_mode || "24h";
-        const currentHour = this._getCurrentHourForClock(cfg, hass);
+        const systemHour = getSystemHour();
 
         (cfg.layers || []).forEach((lc, index) => {
           const baseRadius =
@@ -713,7 +847,7 @@
           let values = rawValues;
           if (clockMode === "12h") {
             if (rawValues.length >= 24) {
-              const isDay = currentHour >= 12;
+              const isDay = systemHour >= 12;
               const start = isDay ? 12 : 0;
               const end = start + 12;
               values = rawValues.slice(start, end);
@@ -736,6 +870,7 @@
           let maxIndex = -1;
 
           values.forEach((v, i) => {
+            if (v == null) return;
             const num = Number(v);
             if (isNaN(num)) return;
             if (min === null || num < min) {
@@ -755,6 +890,7 @@
           if (avg != null) {
             let bestDiff = null;
             values.forEach((v, i) => {
+              if (v == null) return;
               const num = Number(v);
               if (isNaN(num)) return;
               const diff = Math.abs(num - avg);
@@ -802,7 +938,7 @@
             lc.attribute || "today",
             lc.value_path || "value"
           );
-          return vals.filter((v) => v != null && !isNaN(v));
+          return vals;
         }
 
         if (
@@ -812,9 +948,10 @@
         ) {
           const attrName = lc.attribute || "";
           if (attrName && Array.isArray(st.attributes[attrName])) {
-            return st.attributes[attrName]
-              .map((v) => Number(v))
-              .filter((v) => !isNaN(v));
+            // Assume attribute array is already one slot per hour or similar
+            return st.attributes[attrName].map((v) =>
+              v == null ? null : Number(v)
+            );
           }
 
           const s = st.state;
@@ -822,7 +959,7 @@
             try {
               const json = JSON.parse(s);
               if (Array.isArray(json)) {
-                return json.filter((v) => v != null && !isNaN(v)).map(Number);
+                return json.map((v) => (v == null ? null : Number(v)));
               }
             } catch (e) {}
           }
@@ -837,6 +974,35 @@
         }
 
         return [];
+      }
+
+      // ---- outer ticks (minutes) ----
+
+      _renderOuterTicksSvg(cfg, rOuter) {
+        const ticks = 60;
+        const span = cfg.end_angle - cfg.start_angle || 360;
+        let out = "";
+        const baseColor = "rgba(255,255,255,0.35)";
+        for (let i = 0; i < ticks; i++) {
+          const isBig = i % 5 === 0;
+          const len = isBig ? 2.5 : 1.5;
+          const width = isBig ? 0.7 : 0.4;
+          const angle = cfg.start_angle + (span * i) / ticks;
+          const p1 = polarToCartesian(rOuter - len, angle);
+          const p2 = polarToCartesian(rOuter, angle);
+          out += `
+            <line
+              x1="${p1.x}"
+              y1="${p1.y}"
+              x2="${p2.x}"
+              y2="${p2.y}"
+              stroke="${baseColor}"
+              stroke-width="${width}"
+              stroke-linecap="round"
+            ></line>
+          `;
+        }
+        return out;
       }
 
       // ---- svg rendering ----
@@ -864,7 +1030,9 @@
         let segs = "";
 
         for (let i = 0; i < n; i++) {
-          const val = values[i];
+          const v = values[i];
+          if (v == null || isNaN(Number(v))) continue; // no data -> no color
+          const val = Number(v);
           const angleStart = cfg.start_angle + step * i;
           const angleEnd = cfg.start_angle + step * (i + 1);
 
@@ -1116,6 +1284,7 @@
           angle,
           color: sw.color || "#FFFFFF",
           width: sw.width || 1.5,
+          opacity: sw.opacity ?? 1,
         };
       }
 
@@ -1125,7 +1294,7 @@
 
         const now = new Date();
         const minutes = now.getMinutes() + now.getSeconds() / 60;
-        const t = minutes / 60; // 0..1 per timme
+        const t = minutes / 60; // 0..1 per hour
 
         const span = cfg.end_angle - cfg.start_angle || 360;
         const angle = cfg.start_angle + span * t;
@@ -1134,6 +1303,7 @@
           angle,
           color: ms.color || "#FFFFFF",
           width: ms.width || 1.2,
+          opacity: ms.opacity ?? 1,
         };
       }
 
@@ -1146,6 +1316,7 @@
           seconds,
           color: sw.color || "#FF4081",
           width: sw.width || 1.0,
+          opacity: sw.opacity ?? 1,
         };
       }
 
@@ -1164,12 +1335,14 @@
             stroke="${sw.color}"
             stroke-width="${sw.width}"
             stroke-linecap="round"
+            stroke-opacity="${sw.opacity ?? 1}"
           ></line>
           <circle
             cx="${pOuter.x}"
             cy="${pOuter.y}"
             r="1.3"
             fill="${sw.color}"
+            fill-opacity="${sw.opacity ?? 1}"
           ></circle>
         `;
       }
@@ -1189,6 +1362,7 @@
             stroke="${sw.color}"
             stroke-width="${sw.width}"
             stroke-linecap="round"
+            stroke-opacity="${sw.opacity ?? 1}"
           ></line>
         `;
       }
@@ -1204,6 +1378,7 @@
               --second-end-angle:${cfg.end_angle};
               animation-delay:-${sw.seconds}s;
             "
+            opacity="${sw.opacity ?? 1}"
           >
             <line
               x1="0"
@@ -1227,7 +1402,7 @@
       _renderCenterLayersHtml(cfg, hass) {
         const layers = cfg.center_layers || [];
         let htmlStr = "";
-        const period = this._getPeriodString(cfg, hass);
+        const period = this._getPeriodString(cfg);
 
         layers.forEach((lc) => {
           let text = "";
@@ -1297,7 +1472,7 @@
       _renderBottomLayersHtml(cfg, hass) {
         const layers = cfg.bottom_layers || [];
         let htmlStr = "";
-        const period = this._getPeriodString(cfg, hass);
+        const period = this._getPeriodString(cfg);
 
         layers.forEach((lc) => {
           let text = "";
@@ -1405,15 +1580,15 @@
       constructor() {
         super();
         this._config = deepMerge(StatsClockDefaultConfig, {});
-        this._expandedLayerIndex = 0;
-        this._expandedCenterIndex = 0;
-        this._expandedBottomIndex = 0;
+        // All collapsed initially
+        this._expandedLayerIndex = -1;
+        this._expandedCenterIndex = -1;
+        this._expandedBottomIndex = -1;
       }
 
       setConfig(config) {
         this._config = deepMerge(StatsClockDefaultConfig, config || {});
 
-        // Bakåtkompatibelt import av sweeper → hour_sweeper
         if (config && config.sweeper && !config.hour_sweeper) {
           this._config.hour_sweeper = deepMerge(
             this._config.hour_sweeper || {},
@@ -1560,13 +1735,22 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 8px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: linear-gradient(
+              90deg,
+              rgba(74, 20, 140, 0.28),
+              rgba(106, 27, 154, 0.18)
+            );
+            border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.2));
           }
           .section-header {
             font-weight: 600;
+            font-size: 0.95rem;
           }
           .section-header-right {
             font-size: 0.8rem;
-            opacity: 0.7;
+            opacity: 0.8;
           }
           .row-inline {
             display: flex;
@@ -1690,7 +1874,7 @@
           <div class="section">
             <div class="section-header-bar">
               <div class="section-header">General</div>
-              <div class="section-header-right">v0.3.5</div>
+              <div class="section-header-right">v0.3.6</div>
             </div>
             <div class="row-inline">
               <ha-select
@@ -1719,13 +1903,10 @@
               </ha-select>
 
               <ha-select
-                label="Hands share center pivot"
-                .value=${cfg.hands_center_pivot ? "true" : "false"}
+                label="Show minute ticks on outer ring"
+                .value=${cfg.outer_ticks && cfg.outer_ticks.enabled ? "true" : "false"}
                 @selected=${(e) =>
-                  this._updateRoot(
-                    "hands_center_pivot",
-                    e.target.value === "true"
-                  )}
+                  this._updateOuterTicks("enabled", e.target.value === "true")}
                 @closed=${this._stopPropagation}
               >
                 <mwc-list-item value="true">Yes</mwc-list-item>
@@ -1773,6 +1954,55 @@
                 .value=${cfg.style.background || ""}
                 @input=${(e) =>
                   this._updateStyle("background", e.target.value)}
+              ></ha-textfield>
+            </div>
+
+            <div class="row-inline" style="margin-top:4px;">
+              <ha-select
+                label="Hands share center pivot"
+                .value=${cfg.hands_center_pivot ? "true" : "false"}
+                @selected=${(e) =>
+                  this._updateRoot(
+                    "hands_center_pivot",
+                    e.target.value === "true"
+                  )}
+                @closed=${this._stopPropagation}
+              >
+                <mwc-list-item value="true">Yes</mwc-list-item>
+                <mwc-list-item value="false">No</mwc-list-item>
+              </ha-select>
+
+              <div class="color-group">
+                <input
+                  type="color"
+                  class="color-input"
+                  .value=${this._normalizeColorInput(
+                    (cfg.hub && cfg.hub.color) || "#ffffff"
+                  )}
+                  @input=${(e) => this._updateHub("color", e.target.value)}
+                  @click=${this._stopPropagation}
+                />
+                <ha-textfield
+                  label="Hub color"
+                  .value=${(cfg.hub && cfg.hub.color) || ""}
+                  @input=${(e) => this._updateHub("color", e.target.value)}
+                ></ha-textfield>
+              </div>
+
+              <ha-textfield
+                type="number"
+                label="Hub radius"
+                .value=${(cfg.hub && cfg.hub.radius) ?? 2.3}
+                @input=${(e) =>
+                  this._updateHub("radius", Number(e.target.value))}
+              ></ha-textfield>
+
+              <ha-textfield
+                type="number"
+                label="Hub opacity (0-1)"
+                .value=${(cfg.hub && cfg.hub.opacity) ?? 1}
+                @input=${(e) =>
+                  this._updateHub("opacity", Number(e.target.value))}
               ></ha-textfield>
             </div>
           </div>
@@ -1859,12 +2089,25 @@
         this._emitConfigChanged();
       }
 
+      _updateOuterTicks(key, value) {
+        const ot = { ...(this._config.outer_ticks || {}) };
+        ot[key] = value;
+        this._config = { ...this._config, outer_ticks: ot };
+        this._emitConfigChanged();
+      }
+
+      _updateHub(key, value) {
+        const hub = { ...(this._config.hub || {}) };
+        hub[key] = value;
+        this._config = { ...this._config, hub };
+        this._emitConfigChanged();
+      }
+
       // ---------- Hour / minute / second sweeper sections ----------
 
       _updateHourSweeper(key, value) {
         const sw = { ...(this._config.hour_sweeper || {}) };
         sw[key] = value;
-        // Håll sweeper i sync för bakåtkompatibilitet
         this._config = {
           ...this._config,
           hour_sweeper: sw,
@@ -1942,6 +2185,14 @@
               @input=${(e) =>
                 this._updateHourSweeper("width", Number(e.target.value))}
             ></ha-textfield>
+
+            <ha-textfield
+              type="number"
+              label="Hour hand opacity (0-1)"
+              .value=${sw.opacity ?? 1}
+              @input=${(e) =>
+                this._updateHourSweeper("opacity", Number(e.target.value))}
+            ></ha-textfield>
           </div>
 
           <div class="row-inline">
@@ -2004,6 +2255,17 @@
                   Number(e.target.value)
                 )}
             ></ha-textfield>
+
+            <ha-textfield
+              type="number"
+              label="Minute hand opacity (0-1)"
+              .value=${sw.opacity ?? 1}
+              @input=${(e) =>
+                this._updateMinuteSweeper(
+                  "opacity",
+                  Number(e.target.value)
+                )}
+            ></ha-textfield>
           </div>
         `;
       }
@@ -2054,6 +2316,17 @@
               @input=${(e) =>
                 this._updateSecondSweeper(
                   "width",
+                  Number(e.target.value)
+                )}
+            ></ha-textfield>
+
+            <ha-textfield
+              type="number"
+              label="Second hand opacity (0-1)"
+              .value=${sw.opacity ?? 1}
+              @input=${(e) =>
+                this._updateSecondSweeper(
+                  "opacity",
                   Number(e.target.value)
                 )}
             ></ha-textfield>
