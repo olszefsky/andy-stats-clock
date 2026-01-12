@@ -1,6 +1,7 @@
+(() => {
 /**
  * Andy Stats Clock
- * v1.0.1
+ * v1.0.3
  * ------------------------------------------------------------------
  * Developed by: Andreas ("AndyBonde") with some help from AI :).
  *
@@ -17,13 +18,12 @@
  *
  *
  */
-(() => {
+
   const CARD_TAG = "andy-stats-clock";
   const EDITOR_TAG = "andy-stats-clock-editor";
-
-
+  
   console.info(
-    `%c Andy Stats Clock %c v1.0.1 loaded`,
+    `%c Andy Stats Clock %c v1.0.3 loaded Development `,
     "color: white; background: #4A148C; padding: 4px 8px; border-radius: 4px 0 0 4px;",
     "color: white; background: #6A1B9A; padding: 4px 8px; border-radius: 0 4px 4px 0;"
   );
@@ -76,6 +76,7 @@
       color: "#FFFFFF",
       width: 1.5,
       opacity: 1,
+      length_scale: 1.0,
     },
 
     // Minute hand
@@ -84,6 +85,7 @@
       color: "#FFFFFF",
       width: 1.2,
       opacity: 1,
+      length_scale: 1.0,
     },
 
     // Second hand
@@ -92,6 +94,7 @@
       color: "#FF4081",
       width: 1.0,
       opacity: 1,
+      length_scale: 1.0,
     },
 
     // Hub in center (when hands_center_pivot = true)
@@ -1317,7 +1320,7 @@ _renderHourLabelsSvg(cfg, r) {
     out += `
       <text
         x="${p.x}"
-        y="${p.y + 2}"
+        y="${p.y }"
         text-anchor="middle"
         alignment-baseline="middle"
         font-size="4"
@@ -1417,6 +1420,7 @@ _renderHourLabelsSvg(cfg, r) {
           opacity: sw.opacity != null ? sw.opacity : 1,
           show_dash: sw.show_dash !== false,
           dash_radius: sw.dash_radius != null ? Number(sw.dash_radius) : 1.3,
+          length_scale: sw.length_scale != null ? Number(sw.length_scale) : 1.0,
         };
       }
 
@@ -1428,9 +1432,10 @@ _renderHourLabelsSvg(cfg, r) {
         const minutes = now.getMinutes() + now.getSeconds() / 60;
         const t = minutes / 60; // 0..1 över timmen
 
-        const geom = this._getClockGeometryLabels(cfg);
+        const geom = this._getClockGeometry(cfg);
         const span = geom.span;
-        const angle = geom.start + span * t;
+        //const angle = geom.start + span * t;
+        const angle = span * t;
 
         return {
           angle,
@@ -1439,6 +1444,7 @@ _renderHourLabelsSvg(cfg, r) {
           opacity: ms.opacity ?? 1,
           show_dash: ms.show_dash !== false,
           dash_radius: ms.dash_radius != null ? Number(ms.dash_radius) : 1.1,
+          length_scale: ms.length_scale != null ? Number(ms.length_scale) : 1.0,
         };
       }
 
@@ -1454,6 +1460,7 @@ _renderHourLabelsSvg(cfg, r) {
           opacity: sw.opacity ?? 1,
           show_dash: sw.show_dash !== false,
           dash_radius: sw.dash_radius != null ? Number(sw.dash_radius) : 1.1,
+          length_scale: sw.length_scale != null ? Number(sw.length_scale) : 1.0
         };
       }
 
@@ -1461,7 +1468,10 @@ _renderHourLabelsSvg(cfg, r) {
 
       _renderHourSweeperSvg(sw, radius, centerPivot) {
         const inner = centerPivot ? 0 : radius * 0.1;
-        const outer = radius;
+        
+        const lengthScale = sw.length_scale != null ? Number(sw.length_scale) : 1.0;
+        const outer = radius * lengthScale;
+
         const pInner = polarToCartesian(inner, sw.angle);
         const pOuter = polarToCartesian(outer, sw.angle);
 
@@ -1497,7 +1507,11 @@ _renderHourLabelsSvg(cfg, r) {
 
       _renderMinuteSweeperSvg(sw, radius, centerPivot) {
         const inner = centerPivot ? 0 : radius * 0.06;
-        const outer = radius - 1.5;
+        //const outer = radius - 1.5;
+        const baseOuter = radius - 1.5;
+        const lengthScale = sw.length_scale != null ? Number(sw.length_scale) : 1.0;
+        const outer = baseOuter * lengthScale
+        
         const pInner = polarToCartesian(inner, sw.angle);
         const pOuter = polarToCartesian(outer, sw.angle);
 
@@ -1533,7 +1547,8 @@ _renderHourLabelsSvg(cfg, r) {
 
       _renderSecondSweeperSvgSmooth(cfg, sw, radius, centerPivot) {
         const inner = centerPivot ? 0 : radius * 0.1;
-        const outer = radius;
+        const lengthScale = sw.length_scale != null ? Number(sw.length_scale) : 1.0;
+        const outer = radius * lengthScale;
         const dashRadius = sw.dash_radius != null ? Number(sw.dash_radius) : 1.1;
 
         const dashSvg =
@@ -2334,6 +2349,18 @@ _renderHourLabelsSvg(cfg, r) {
                   this._updateHourSweeper("color", e.target.value)}
               ></ha-textfield>
             </div>
+            
+            <ha-textfield
+  type="number"
+  label="Hour hand length (scale)"
+  step="0.05"
+  .value=${sw.length_scale ?? 1}
+  @input=${(e) =>
+    this._updateHourSweeper(
+      "length_scale",
+      Number(e.target.value)
+    )}
+></ha-textfield>
 
             <ha-textfield
               type="number"
@@ -2343,6 +2370,7 @@ _renderHourLabelsSvg(cfg, r) {
               @input=${(e) =>
                 this._updateHourSweeper("width", Number(e.target.value))}
             ></ha-textfield>
+            
 
             <ha-textfield
               type="number"
@@ -2418,6 +2446,21 @@ _renderHourLabelsSvg(cfg, r) {
                   this._updateMinuteSweeper("color", e.target.value)}
               ></ha-textfield>
             </div>
+            
+            <ha-textfield
+  type="number"
+  label="Minute hand length (scale)"
+  step="0.05"
+  .value=${sw.length_scale ?? 1}
+  @input=${(e) =>
+    this._updateMinuteSweeper(
+      "length_scale",
+      Number(e.target.value)
+    )}
+></ha-textfield>
+
+            
+            
 
             <ha-textfield
               type="number"
@@ -2506,6 +2549,20 @@ _renderHourLabelsSvg(cfg, r) {
                   this._updateSecondSweeper("color", e.target.value)}
               ></ha-textfield>
             </div>
+            
+            <ha-textfield
+  type="number"
+  label="Second hand length (scale)"
+  step="0.05"
+  .value=${sw.length_scale ?? 1}
+  @input=${(e) =>
+    this._updateSecondSweeper(
+      "length_scale",
+      Number(e.target.value)
+    )}
+></ha-textfield>
+
+            
 
             <ha-textfield
               type="number"
