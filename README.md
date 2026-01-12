@@ -6,7 +6,7 @@ This is not just a clock — it’s an interactive, animated, data-driven radial
 
 ![Preview 1_0_5](images/preview_12h_2.png)
 ![Preview 1_0_5_2](images/preview_24h_2.png)
-![Preview 1_0_5_3](images/preview_12h_clockonly.png)
+![Preview 1_0_5_3](images/preview_12h_clockonly_2.png)
 
 > **Recommended installation method:** HACS  
 > Manual installation is supported but not recommended unless HACS is unavailable
