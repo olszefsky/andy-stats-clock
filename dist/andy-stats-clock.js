@@ -23,8 +23,9 @@
   const CARD_TAG = "andy-stats-clock";
   const EDITOR_TAG = "andy-stats-clock-editor";
 
+
   console.info(
-    `%c Andy Stats Clock %c v1.0.1 loaded Development `,
+    `%c Andy Stats Clock %c v1.0.1 loaded`,
     "color: white; background: #4A148C; padding: 4px 8px; border-radius: 4px 0 0 4px;",
     "color: white; background: #6A1B9A; padding: 4px 8px; border-radius: 0 4px 4px 0;"
   );
@@ -2109,6 +2110,7 @@ _renderHourLabelsSvg(cfg, r) {
               <ha-textfield
                 type="number"
                 label="Layer gap"
+                step="0.1"
                 .value=${cfg.layer_gap ?? 2}
                 @input=${(e) =>
                   this._updateRoot("layer_gap", Number(e.target.value))}
@@ -2159,6 +2161,7 @@ _renderHourLabelsSvg(cfg, r) {
               <ha-textfield
                 type="number"
                 label="Hub radius"
+                step="0.1"
                 .value=${(cfg.hub && cfg.hub.radius) ?? 2.3}
                 @input=${(e) =>
                   this._updateHub("radius", Number(e.target.value))}
@@ -2167,6 +2170,7 @@ _renderHourLabelsSvg(cfg, r) {
               <ha-textfield
                 type="number"
                 label="Hub opacity (0-1)"
+                step="0.1"
                 .value=${(cfg.hub && cfg.hub.opacity) ?? 1}
                 @input=${(e) =>
                   this._updateHub("opacity", Number(e.target.value))}
@@ -2336,6 +2340,7 @@ _renderHourLabelsSvg(cfg, r) {
             <ha-textfield
               type="number"
               label="Hour hand width"
+              step="0.1"
               .value=${sw.width ?? 1.5}
               @input=${(e) =>
                 this._updateHourSweeper("width", Number(e.target.value))}
@@ -2344,6 +2349,7 @@ _renderHourLabelsSvg(cfg, r) {
             <ha-textfield
               type="number"
               label="Hour hand opacity (0-1)"
+              step="0.1"
               .value=${sw.opacity ?? 1}
               @input=${(e) =>
                 this._updateHourSweeper("opacity", Number(e.target.value))}
@@ -2361,6 +2367,7 @@ _renderHourLabelsSvg(cfg, r) {
           <ha-textfield
             type="number"
             label="Hour tip radius"
+            step="0.1"
             .value=${sw.dash_radius ?? 1.3}
             @input=${(e) =>
               this._updateHourSweeper(
@@ -2417,6 +2424,7 @@ _renderHourLabelsSvg(cfg, r) {
             <ha-textfield
               type="number"
               label="Minute hand width"
+              step="0.1"
               .value=${sw.width ?? 1.2}
               @input=${(e) =>
                 this._updateMinuteSweeper(
@@ -2428,6 +2436,7 @@ _renderHourLabelsSvg(cfg, r) {
             <ha-textfield
               type="number"
               label="Minute hand opacity (0-1)"
+              step="0.1"
               .value=${sw.opacity ?? 1}
               @input=${(e) =>
                 this._updateMinuteSweeper(
@@ -2448,6 +2457,7 @@ _renderHourLabelsSvg(cfg, r) {
           <ha-textfield
             type="number"
             label="Minute tip radius"
+            step="0.1"
             .value=${sw.dash_radius ?? 1.1}
             @input=${(e) =>
               this._updateMinuteSweeper(
@@ -2502,6 +2512,7 @@ _renderHourLabelsSvg(cfg, r) {
             <ha-textfield
               type="number"
               label="Second hand width"
+              step="0.1"
               .value=${sw.width ?? 1.0}
               @input=${(e) =>
                 this._updateSecondSweeper(
@@ -2513,6 +2524,7 @@ _renderHourLabelsSvg(cfg, r) {
             <ha-textfield
               type="number"
               label="Second hand opacity (0-1)"
+              step="0.1"
               .value=${sw.opacity ?? 1}
               @input=${(e) =>
                 this._updateSecondSweeper(
@@ -2533,6 +2545,7 @@ _renderHourLabelsSvg(cfg, r) {
           <ha-textfield
             type="number"
             label="Second tip radius"
+            step="0.1"
             .value=${sw.dash_radius ?? 1.1}
             @input=${(e) =>
               this._updateSecondSweeper(
@@ -2805,6 +2818,7 @@ _renderHourLabelsSvg(cfg, r) {
                     ></ha-textfield>
                     <ha-textfield
                       type="number"
+                      step="0.1"
                       label="Thickness"
                       .value=${layer.thickness ?? 8}
                       @input=${(e) =>
@@ -2817,6 +2831,7 @@ _renderHourLabelsSvg(cfg, r) {
                     <ha-textfield
                       type="number"
                       label="Opacity (0-1)"
+                      step="0.1"
                       .value=${layer.opacity ?? 1}
                       @input=${(e) =>
                         this._updateLayer(
@@ -3161,6 +3176,7 @@ _renderHourLabelsSvg(cfg, r) {
                     <ha-textfield
                       type="number"
                       label="Badge font size (SVG units)"
+                      step="0.1"
                       .value=${sm.font_size ?? 3}
                       @input=${(e) =>
                         this._updateLayerStatsMarkers(
@@ -3173,6 +3189,7 @@ _renderHourLabelsSvg(cfg, r) {
                     <ha-textfield
                       type="number"
                       label="Radius offset"
+                      step="0.1"
                       .value=${sm.radius_offset ?? 2}
                       @input=${(e) =>
                         this._updateLayerStatsMarkers(
@@ -3418,6 +3435,7 @@ _renderHourLabelsSvg(cfg, r) {
                     <ha-textfield
                       type="number"
                       label="Font size (px)"
+                      step="0.1"
                       .value=${cl.font_size ?? 16}
                       @input=${(e) =>
                         this._updateCenterLayer(
@@ -3668,6 +3686,7 @@ _renderHourLabelsSvg(cfg, r) {
                     <ha-textfield
                       type="number"
                       label="Font size (px)"
+                      step="0.1"
                       .value=${cl.font_size ?? 11}
                       @input=${(e) =>
                         this._updateBottomLayer(
