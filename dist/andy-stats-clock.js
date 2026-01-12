@@ -1,4 +1,3 @@
-(() => {
 /**
  * Andy Stats Clock
  * v1.0.1
@@ -19,7 +18,6 @@
  *
  */
 (() => {
-
   const CARD_TAG = "andy-stats-clock";
   const EDITOR_TAG = "andy-stats-clock-editor";
 
