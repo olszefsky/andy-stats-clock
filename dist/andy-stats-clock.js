@@ -1,7 +1,7 @@
 (() => {
 /**
  * Andy Stats Clock
- * v1.0.5
+ * v1.0.6
  * ------------------------------------------------------------------
  * Developed by: Andreas ("AndyBonde") with some help from AI :).
  *
@@ -20,10 +20,10 @@
  */
   const CARD_TAG = "andy-stats-clock";
   const EDITOR_TAG = "andy-stats-clock-editor";
-  const VERSION = "v1.0.5"
+  const VERSION = "v1.0.6"
 
   console.info(
-    `%c Andy Stats Clock %c ${VERSION} loaded Development `,
+    `%c Andy Stats Clock %c ${VERSION} loaded `,
     "color: white; background: #4A148C; padding: 4px 8px; border-radius: 4px 0 0 4px;",
     "color: white; background: #6A1B9A; padding: 4px 8px; border-radius: 0 4px 4px 0;"
   );
@@ -53,12 +53,12 @@
     end_angle: 352.5,
     radius: 45,
     layer_gap: 2,
-    hands_center_pivot: false, // shared hub
+    hands_center_pivot: true, // shared hub
     scale: 1, //v1.04
 
     // Outer minute ticks
     outer_ticks: {
-      enabled: false,
+      enabled: true,
     },
 
     // Backwards compatible sweeper (hour hand)
@@ -74,27 +74,30 @@
       enabled: true,
       use_system_time: true,
       entity: "",
-      color: "#FFFFFF",
+      color: "#03a9f4",
       width: 1.5,
-      opacity: 1,
-      length_scale: 1.0,
+      opacity: 0.8,
+      show_dash: false,
+      length_scale: 0.75,
     },
 
     // Minute hand
     minute_sweeper: {
-      enabled: false,
+      enabled: true,
       color: "#FFFFFF",
       width: 1.2,
-      opacity: 1,
-      length_scale: 1.0,
+      opacity: 0.8,
+      show_dash: false,
+      length_scale: 0.9,
     },
 
     // Second hand
     second_sweeper: {
-      enabled: false,
-      color: "#FF4081",
+      enabled: true,
+      color: "#f50049",
       width: 1.0,
       opacity: 1,
+      show_dash: false,
       length_scale: 1.0,
     },
 
@@ -226,13 +229,27 @@
 
   const len = values.length;
 
+  // Helper: slice and preserve meta arrays (e.g. __prevMask, __todayOnly) when possible
+  const sliceWithMeta = (arr, start, end) => {
+    const sliced = arr.slice(start, end);
+
+    try {
+      if (Array.isArray(arr.__prevMask) && arr.__prevMask.length === arr.length) {
+        sliced.__prevMask = arr.__prevMask.slice(start, end);
+      }
+      if (Array.isArray(arr.__todayOnly) && arr.__todayOnly.length === arr.length) {
+        sliced.__todayOnly = arr.__todayOnly.slice(start, end);
+      }
+    } catch (e) {}
+    return sliced;
+  };
+
   // Om vi har data för ett helt dygn (eller multiplar av 24)
   // tolkar vi det som tidslinje över dygnet (t.ex. Nordpool, Tibber,
   // 24h-förbrukning, 96 x 15-min osv).
   if (len >= 24 && len % 24 === 0) {
     const itemsPerHour = len / 24; // 1 = timvärden, 4 = 15-min, osv
-    const now = new Date();
-    const hour = now.getHours(); // 0–23
+    const hour = getSystemHour(); // 0–23
     const isPm = hour >= 12;
 
     const startHour = isPm ? 12 : 0;   // 00–11 eller 12–23
@@ -241,17 +258,18 @@
     const startIndex = startHour * itemsPerHour;
     const endIndex = endHour * itemsPerHour;
 
-    return values.slice(startIndex, endIndex);
+    return sliceWithMeta(values, startIndex, endIndex);
   }
 
   // Annars: generisk historik – visa de senaste 12 värdena (upp till nu)
   if (len > 12) {
-    return values.slice(len - 12);
+    return sliceWithMeta(values, len - 12, len);
   }
 
   // Kortare listor: visa allt
   return values;
 }
+
 
 
   function getEntityState(hass, entityId) {
@@ -342,6 +360,9 @@
                 font_size: 3,
                 radius_offset: 2,
                 decimals: 1,
+                outline: false,
+                outline_color: "rgba(0,0,0,0.65)",
+                outline_width: 0.8,
                 min_label: "",
                 max_label: "",
                 avg_label: "",
@@ -434,13 +455,23 @@
         return h < 12 ? "AM" : "PM";
       }
 
-      _getHistory24ForLayer(lc, hass, stateObj) {
+            _getHistory24ForLayer(lc, hass, stateObj) {
         if (!hass || !lc || !lc.entity) return [];
         const entityId = lc.entity;
-        //1.0.4
-        //const cacheKey = `${entityId}::today24`;
-        const cacheKey = `${entityId}::${lc.id || "layer"}::today24::${lc.keep_across_midnight ? "keep" : "reset"}`;
-        
+
+        // History/consumption can optionally render multiple sub-segments per hour.
+        // Semantics (per request):
+        //   segment_count = 0/empty  -> 1 segment per hour (legacy behaviour)
+        //   segment_count = N (1..60)-> split each hour into N sub-segments
+        // This only applies to history/consumption layers (NOT price/attribute arrays).
+        const isHistLayer = lc.price_source === "history" || lc.type === "history" || lc.type === "consumption";
+        const perHour = isHistLayer && lc.segment_count != null && Number(lc.segment_count) > 0
+          ? Math.max(1, Math.min(60, Math.floor(Number(lc.segment_count))))
+          : 1;
+        const bucketsLen = 24 * perHour;
+
+        // Cache per entity + layer + keep-mode
+        const cacheKey = `${entityId}::${lc.id || "layer"}::hist24::seg${perHour}::${lc.keep_across_midnight ? "keep" : "reset"}`;
         const now = Date.now();
         const ttlMs = 5 * 60 * 1000;
 
@@ -448,7 +479,6 @@
         if (existing && existing.values && now - existing.fetchedAt < ttlMs) {
           return existing.values;
         }
-
         if (existing && existing.loading) {
           return existing.values || [];
         }
@@ -459,8 +489,28 @@
         };
 
         try {
-          const start = new Date();
+          const nowDate = new Date();
+          const nowHour = nowDate.getHours(); // 0..23
+          const nowMin = nowDate.getMinutes();
+          const nowIndex = (nowHour * perHour) + Math.min(perHour - 1, Math.floor((nowMin * perHour) / 60));
+
+          const mkKey = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const da = String(d.getDate()).padStart(2, "0");
+            return `${y}-${m}-${da}`;
+          };
+
+          const todayKey = mkKey(nowDate);
+          const yd = new Date(nowDate);
+          yd.setDate(yd.getDate() - 1);
+          const yKey = mkKey(yd);
+
+          // If keep is enabled: fetch from yesterday 00:00 so we can backfill "future hours"
+          const start = new Date(nowDate);
+          if (lc.keep_across_midnight === true) start.setDate(start.getDate() - 1);
           start.setHours(0, 0, 0, 0);
+
           const iso = start.toISOString();
           const url = `history/period/${iso}?filter_entity_id=${encodeURIComponent(
             entityId
@@ -473,47 +523,127 @@
               if (Array.isArray(res) && res.length > 0 && Array.isArray(res[0])) {
                 series = res[0];
               }
-              
-              //v1.0.4
-              //const buckets = new Array(24).fill(null);
-              // If keep_across_midnight: seed with previous buckets (24) and overwrite per hour.
-              const prev =
-                lc.keep_across_midnight &&
-                Array.isArray(existing?.values) &&
-                existing.values.length === 24
-                  ? existing.values
-                  : null;
-              const buckets = prev ? prev.slice() : new Array(24).fill(null);
-              
 
+              const todayBuckets = new Array(bucketsLen).fill(null);
+              const yestBuckets = new Array(bucketsLen).fill(null);
 
               series.forEach((pt) => {
-                const ts =
-                  pt.last_updated ||
-                  pt.last_changed ||
-                  pt.time ||
-                  pt.timestamp;
+                const ts = pt.last_updated || pt.last_changed || pt.time || pt.timestamp;
                 const d = ts ? new Date(ts) : null;
                 if (!d || isNaN(d.getTime())) return;
                 const h = d.getHours();
                 if (h < 0 || h > 23) return;
+                const m = d.getMinutes();
+                const sub = perHour <= 1 ? 0 : Math.min(perHour - 1, Math.floor((m * perHour) / 60));
+                const idx = (h * perHour) + sub;
                 const v = Number(pt.state);
                 if (isNaN(v)) return;
-                buckets[h] = v;
+
+                const dk = mkKey(d);
+                if (dk === todayKey) todayBuckets[idx] = v;
+                else if (dk === yKey) yestBuckets[idx] = v;
               });
+
+              // Build final buckets:
+              // - For hours already passed today (<= nowHour): use today's value (filled-forward if needed), NEVER backfill from yesterday.
+              // - For future hours (> nowHour): use today's value if present; otherwise (if keep enabled) backfill from yesterday and mark prevMask.
+              //
+              // NOTE: History can be sparse (only changes). To keep the ring stable, we fill-forward within today for passed hours.
+              const todayFilled = todayBuckets.slice();
+
+// History can be sparse. For hours that already happened today we "fill forward" so we don't lose
+// already-known segments when keep is toggled.
+// If we don't have any bucket yet for today (0..nowHour), fall back to current state as the baseline.
+let baselineToday = null;
+for (let i = 0; i <= nowIndex; i++) {
+  if (todayBuckets[i] != null && !isNaN(todayBuckets[i])) { baselineToday = todayBuckets[i]; break; }
+}
+if (baselineToday == null) {
+  const cur = Number(stateObj.state);
+  baselineToday = isNaN(cur) ? null : cur;
+}
+
+let lastToday = baselineToday;
+for (let i = 0; i < bucketsLen; i++) {
+  if (todayBuckets[i] != null && !isNaN(todayBuckets[i])) lastToday = todayBuckets[i];
+  if (i <= nowIndex) {
+    todayFilled[i] = lastToday;
+  } else {
+    // Future should be empty in the base series
+    todayFilled[i] = null;
+  }
+}
+
+const buckets = new Array(bucketsLen).fill(null);
+const prevMask = new Array(bucketsLen).fill(false); // true where value comes from yesterday
+
+for (let i = 0; i < bucketsLen; i++) {
+  if (i <= nowIndex) {
+    // Past/now: ALWAYS today's values (filled-forward), never backfill from yesterday
+    buckets[i] = todayFilled[i];
+  } else if (lc.keep_across_midnight === true) {
+    // Future: keep today's if present, otherwise backfill from yesterday and mark for fading
+    if (todayBuckets[i] != null && !isNaN(todayBuckets[i])) {
+      buckets[i] = todayBuckets[i];
+    } else if (yestBuckets[i] != null && !isNaN(yestBuckets[i])) {
+      buckets[i] = yestBuckets[i];
+      prevMask[i] = true;
+    } else {
+      buckets[i] = null;
+    }
+  } else {
+    // Future: no keep -> remain empty
+    buckets[i] = null;
+  }
+}
+
+
+              // For stable gradients: compute min/max on today's known window only (no backfilled values)
+              const todayOnly = todayFilled.slice();
+              for (let i = nowIndex + 1; i < bucketsLen; i++) todayOnly[i] = null;
+
+              // IMPORTANT: Turning on Keep must NOT change today's colors.
+              // If we have a fresh "reset" (keep=false) cache for this layer, use its values as the
+              // authoritative "today-only" series (and for past hours) so min/max and colors remain identical.
+              if (lc.keep_across_midnight === true) {
+                const resetKey = `${entityId}::${lc.id || "layer"}::hist24::seg${perHour}::reset`;
+                const resetCached = this._historyCache[resetKey];
+                if (resetCached && resetCached.values && !resetCached.loading && resetCached.fetchedAt && (Date.now() - resetCached.fetchedAt) < ttlMs) {
+                  try {
+                    const resetVals = resetCached.values;
+                    // Ensure past/now hours match reset mode exactly
+                    for (let i = 0; i <= nowIndex && i < bucketsLen && i < resetVals.length; i++) {
+                      buckets[i] = resetVals[i];
+                      prevMask[i] = false;
+                    }
+                    // And ensure today's min/max basis matches reset mode
+                    for (let i = 0; i < bucketsLen && i < resetVals.length; i++) {
+                      todayOnly[i] = (i <= nowIndex) ? resetVals[i] : null;
+                    }
+                  } catch (e) {}
+                }
+              }
 
               const hasAny = buckets.some((v) => v != null && !isNaN(v));
               let finalValues;
               if (!hasAny) {
                 // No history at all: fallback to current state repeated
                 const cur = Number(stateObj.state);
-                finalValues = isNaN(cur)
-                  ? []
-                  : new Array(24).fill(cur);
+                finalValues = isNaN(cur) ? [] : new Array(bucketsLen).fill(cur);
               } else {
-                // Important: keep nulls for hours with no data (future) so ring is empty there.
                 finalValues = buckets;
               }
+
+              // Attach meta for fade + stable min/max. (Properties survive as long as array is not sliced.)
+              try {
+                finalValues.__prevMask = prevMask;
+                finalValues.__todayOnly = todayOnly;
+                finalValues.__todayBuckets = todayBuckets;
+                finalValues.__yestBuckets = yestBuckets;
+                finalValues.__nowHour = nowHour;
+                finalValues.__perHour = perHour;
+                finalValues.__nowIndex = nowIndex;
+              } catch (e) {}
 
               this._historyCache[cacheKey] = {
                 loading: false,
@@ -523,33 +653,157 @@
               this._render();
             })
             .catch((err) => {
-              console.error("Andy Stats Clock history error", err);
-              const cur = Number(stateObj.state);
-              const fallbackValues = isNaN(cur)
-                ? []
-                : new Array(24).fill(cur);
               this._historyCache[cacheKey] = {
                 loading: false,
                 fetchedAt: Date.now(),
-                values: fallbackValues,
+                values: existing?.values || [],
               };
               this._render();
             });
         } catch (e) {
-          console.error("Andy Stats Clock history exception", e);
-          const cur = Number(stateObj.state);
-          const fallbackValues = isNaN(cur)
-            ? []
-            : new Array(24).fill(cur);
           this._historyCache[cacheKey] = {
             loading: false,
             fetchedAt: Date.now(),
-            values: fallbackValues,
+            values: existing?.values || [],
           };
         }
 
-        return this._historyCache[cacheKey].values || [];
+        return existing?.values || [];
       }
+
+_getYesterday24ForLayer(lc, hass) {
+  if (!hass || !lc || !lc.entity) return [];
+  const entityId = lc.entity;
+
+  const isHistLayer = lc.price_source === "history" || lc.type === "history" || lc.type === "consumption";
+  const perHour = isHistLayer && lc.segment_count != null && Number(lc.segment_count) > 0
+    ? Math.max(1, Math.min(60, Math.floor(Number(lc.segment_count))))
+    : 1;
+  const bucketsLen = 24 * perHour;
+
+  // Cache yesterday buckets separately (do NOT depend on keep toggle)
+  const cacheKey = `${entityId}::${lc.id || "layer"}::yest24::seg${perHour}`;
+  const now = Date.now();
+  const ttlMs = 10 * 60 * 1000;
+
+  const existing = this._historyCache[cacheKey];
+  if (existing && existing.values && now - existing.fetchedAt < ttlMs) {
+    return existing.values;
+  }
+  if (existing && existing.loading) {
+    return existing.values || [];
+  }
+
+  this._historyCache[cacheKey] = {
+    loading: true,
+    fetchedAt: now,
+    values: existing?.values || [],
+  };
+
+  try {
+    const nowDate = new Date();
+    // local-day boundaries (avoid UTC/local mixing)
+    const todayStart = new Date(nowDate);
+    todayStart.setHours(0, 0, 0, 0);
+    const yStart = new Date(todayStart);
+    yStart.setDate(yStart.getDate() - 1);
+
+    const iso = yStart.toISOString();
+    const url = `history/period/${iso}?filter_entity_id=${encodeURIComponent(
+      entityId
+    )}&minimal_response&significant_changes_only=0`;
+
+    hass
+      .callApi("GET", url)
+      .then((res) => {
+        let series = [];
+        if (Array.isArray(res) && res.length > 0 && Array.isArray(res[0])) {
+          series = res[0];
+        }
+
+        const buckets = new Array(bucketsLen).fill(null);
+
+        // Put last known value per hour for yesterday (local time)
+        series.forEach((pt) => {
+          const ts =
+            pt.last_updated ||
+            pt.last_changed ||
+            pt.time ||
+            pt.timestamp ||
+            pt["last_updated"];
+          const d = ts ? new Date(ts) : null;
+          if (!d || isNaN(d.getTime())) return;
+
+          // only yesterday window [yStart, todayStart)
+          if (d < yStart || d >= todayStart) return;
+
+          const h = d.getHours();
+          if (h < 0 || h > 23) return;
+
+          const m = d.getMinutes();
+          const sub = perHour <= 1 ? 0 : Math.min(perHour - 1, Math.floor((m * perHour) / 60));
+          const idx = (h * perHour) + sub;
+
+          const v = Number(pt.state);
+          if (isNaN(v)) return;
+          buckets[idx] = v;
+        });
+
+        // Fill-forward so each segment has a stable value (avoids nulls due to sparse history)
+        let last = null;
+        for (let i = 0; i < bucketsLen; i++) {
+          if (buckets[i] != null && !isNaN(buckets[i])) {
+            last = buckets[i];
+          } else if (last != null) {
+            buckets[i] = last;
+          }
+        }
+
+        // Fill-backward as well (if the first change happened late in the day,
+        // early hours would stay null with only forward-fill). This makes the
+        // overlay robust and always able to show *something* for every hour.
+        let next = null;
+        for (let i = bucketsLen - 1; i >= 0; i--) {
+          if (buckets[i] != null && !isNaN(buckets[i])) {
+            next = buckets[i];
+          } else if (next != null) {
+            buckets[i] = next;
+          }
+        }
+
+        this._historyCache[cacheKey] = {
+          loading: false,
+          fetchedAt: Date.now(),
+          values: buckets,
+        };
+
+        // This card uses a manual render() pipeline (not Lit's reactive update).
+        // Force a re-render so the keep-overlay becomes visible immediately.
+        this._render();
+      })
+      .catch((e) => {
+        this._historyCache[cacheKey] = {
+          loading: false,
+          fetchedAt: Date.now(),
+          values: [],
+          error: e,
+        };
+
+        // Force re-render so any UI depending on this cache updates.
+        this._render();
+      });
+  } catch (e) {
+    this._historyCache[cacheKey] = {
+      loading: false,
+      fetchedAt: Date.now(),
+      values: [],
+      error: e,
+    };
+  }
+
+  return this._historyCache[cacheKey]?.values || [];
+}
+
 
       // ------------------------------------------------------
       // RENDER
@@ -888,17 +1142,41 @@ _buildLayerData(cfg, hass) {
     let values = this._resolveLayerValues(lc, hass, stateObj);
     if (!values || !values.length) return;
 
+    // If the value source is a plain array (e.g. attribute array) it won't have __todayOnly.
+    // Create it so gradient range stays consistent between 24h and 12h views.
+    if (values && Array.isArray(values) && !values.__todayOnly && values.length >= 24 && values.length % 24 === 0) {
+      try { values.__todayOnly = values.slice(); } catch (e) {}
+    }
+
     //v1.0.4
-    //values = sliceValuesForClockMode(values, cfg);
-    
-     // In 12h mode: normally we slice to AM/PM.
-     // But when keep_across_midnight is enabled, we keep full 24 buckets so previous half-day can be faded instead of disappearing.
-     if (!(cfg.clock_mode === "12h" && lc.keep_across_midnight === true && values.length >= 24)) {
-       values = sliceValuesForClockMode(values, cfg);
-     }
-    
-    
-    if (!values || !values.length) return;
+    // Preserve meta from history arrays (used for keep+fade and stable gradient range)
+    const __prevMaskFull = values && values.__prevMask ? values.__prevMask : null;
+    const __todayOnlyFull = values && values.__todayOnly ? values.__todayOnly : null;
+    const __yestBucketsFull = values && values.__yestBuckets ? values.__yestBuckets : null;
+
+    // Slice to current half-day in 12h mode so geometry stays correct.
+    if ((cfg.clock_mode || "24h") === "12h") {
+      values = sliceValuesForClockMode(values, cfg);
+
+      if (__prevMaskFull && Array.isArray(__prevMaskFull) && __prevMaskFull.length) {
+        const m2 = sliceValuesForClockMode(__prevMaskFull, cfg);
+        try { values.__prevMask = m2; } catch(e) {}
+      }
+      if (__todayOnlyFull && Array.isArray(__todayOnlyFull) && __todayOnlyFull.length) {
+        const t2 = sliceValuesForClockMode(__todayOnlyFull, cfg);
+        try { values.__todayOnly = t2; } catch(e) {}
+      }
+      if (__yestBucketsFull && Array.isArray(__yestBucketsFull) && __yestBucketsFull.length) {
+        const y2 = sliceValuesForClockMode(__yestBucketsFull, cfg);
+        try { values.__yestBuckets = y2; } catch(e) {}
+      }
+    } else {
+      // 24h mode: keep full day buckets
+      try { if (__prevMaskFull) values.__prevMask = __prevMaskFull; } catch(e) {}
+      try { if (__todayOnlyFull) values.__todayOnly = __todayOnlyFull; } catch(e) {}
+      try { if (__yestBucketsFull) values.__yestBuckets = __yestBucketsFull; } catch(e) {}
+    }
+if (!values || !values.length) return;
 
     const unit =
       stateObj.attributes.unit_of_measurement ||
@@ -913,7 +1191,11 @@ _buildLayerData(cfg, hass) {
     let minIndex = -1;
     let maxIndex = -1;
 
-    values.forEach((v, i) => {
+    const statsValues = (values && values.__todayOnly && Array.isArray(values.__todayOnly) && values.__todayOnly.length)
+      ? values.__todayOnly
+      : values;
+
+    statsValues.forEach((v, i) => {
       if (v == null) return;
       const num = Number(v);
       if (isNaN(num)) return;
@@ -933,7 +1215,7 @@ _buildLayerData(cfg, hass) {
     let avgIndex = -1;
     if (avg != null) {
       let bestDiff = null;
-      values.forEach((v, i) => {
+      statsValues.forEach((v, i) => {
         const num = Number(v);
         if (isNaN(num)) return;
         const diff = Math.abs(num - avg);
@@ -943,15 +1225,84 @@ _buildLayerData(cfg, hass) {
         }
       });
     }
+    // Separate gradient range for previous-day values (so turning on Keep doesn't recolor today's segments)
+    let prevMin = null;
+    let prevMax = null;
+    const __yb = values && values.__yestBuckets && Array.isArray(values.__yestBuckets) ? values.__yestBuckets : null;
+    if (__yb && __yb.length) {
+      __yb.forEach((v) => {
+        if (v == null) return;
+        const num = Number(v);
+        if (isNaN(num)) return;
+        if (prevMin == null || num < prevMin) prevMin = num;
+        if (prevMax == null || num > prevMax) prevMax = num;
+      });
+    }
 
-    const segmentCount =
-      lc.segment_count && Number(lc.segment_count) > 0
-        ? Number(lc.segment_count)
-        : values.length;
+
+    const isHistoryLayer =
+      lc.price_source === "history" || lc.type === "history" || lc.type === "consumption";
+
+    // Segment count:
+    // - For history/consumption layers we derive it from the computed values array,
+    //   which may be 24*N (or 12*N in 12h mode) when segment_count is used to split each hour.
+    // - For other layers we keep the legacy behaviour: lc.segment_count can directly control how
+    //   many segments that layer uses.
+    const segmentCount = isHistoryLayer
+      ? (values?.length || 0)
+      : (lc.segment_count && Number(lc.segment_count) > 0 ? Number(lc.segment_count) : (values?.length || 0));
+
+
+// --- Keep across midnight overlay (ONLY for history-based layers) ---
+let overlayValues = null;
+let overlayMask = null;
+let overlayMin = null;
+let overlayMax = null;
+
+if (isHistoryLayer && lc.keep_across_midnight === true) {
+  const y24 = this._getYesterday24ForLayer(lc, hass);
+  if (Array.isArray(y24) && y24.length >= 24 && y24.length % 24 === 0) {
+    const nowHour = getSystemHour(); // 0..23
+    const yView = (cfg.clock_mode || "24h") === "12h"
+      ? sliceValuesForClockMode(y24, cfg)
+      : y24.slice();
+
+    // Build overlay only for future buckets (so today's part is NEVER affected)
+    const nView = values.length;
+    overlayValues = new Array(nView).fill(null);
+    overlayMask = new Array(nView).fill(false);
+
+    const viewHours = (cfg.clock_mode || "24h") === "12h" ? 12 : 24;
+    const itemsPerHour = Math.max(1, Math.floor(nView / viewHours));
+
+    for (let i = 0; i < nView; i++) {
+      let bucketHour = Math.floor(i / itemsPerHour);
+      if ((cfg.clock_mode || "24h") === "12h") {
+        const offset = nowHour >= 12 ? 12 : 0;
+        bucketHour = offset + bucketHour;
+      }
+      if (bucketHour > nowHour) {
+        const v = yView[i];
+        if (v != null && !isNaN(Number(v))) {
+          overlayValues[i] = Number(v);
+          overlayMask[i] = true;
+          if (overlayMin === null || overlayValues[i] < overlayMin) overlayMin = overlayValues[i];
+          if (overlayMax === null || overlayValues[i] > overlayMax) overlayMax = overlayValues[i];
+        }
+      }
+    }
+  }
+}
 
     layers.push({
       cfg: lc,
       values,
+      overlayValues,
+      overlayMask,
+      overlayMin,
+      overlayMax,
+      prevMin,
+      prevMax,
       min,
       max,
       avg,
@@ -1108,7 +1459,15 @@ _buildLayerData(cfg, hass) {
             } catch (e) {}
           }
 
-          const historyVals = this._getHistory24ForLayer(lc, hass, st);
+          // IMPORTANT:
+          // Turning on "Keep values" must NEVER change how today's values/colors are calculated.
+          // So we ALWAYS compute the base (today) series in "reset" mode, and only use
+          // yesterday data as an overlay in the renderer.
+          const baseLc = lc && lc.keep_across_midnight === true
+            ? { ...lc, keep_across_midnight: false }
+            : lc;
+
+          const historyVals = this._getHistory24ForLayer(baseLc, hass, st);
           if (historyVals && historyVals.length) {
             return historyVals;
           }
@@ -1231,6 +1590,12 @@ _getClockGeometryLabels(cfg) {
       _renderLayerSvg(cfg, layer) {
         const {
           values,
+          overlayValues,
+          overlayMask,
+          overlayMin,
+          overlayMax,
+          prevMin,
+          prevMax,
           min,
           max,
           rInner,
@@ -1258,62 +1623,72 @@ _getClockGeometryLabels(cfg) {
         for (let i = 0; i < n; i++) {
           const raw = values[i];
 
-          // Viktigt: saknas data (null / NaN) -> inget segment ritas
-          if (raw == null || isNaN(Number(raw))) continue;
-
-          const val = Number(raw);
           const angleStart = baseStart + step * i;
           const angleEnd = baseStart + step * (i + 1);
-
-          let color = "#28c76f";
-          if (lc.color_mode === "gradient") {
-            color = valueToGradientColor(val, min, max, lc.gradient);
-          } else {
-            const intervals =
-              lc.intervals && lc.intervals.length
-                ? lc.intervals
-                : [
-                    { from: 0, to: 50, color_from: "#28c76f", color_to: "#9be15d" },
-                    { from: 50, to: 100, color_from: "#ff9f43", color_to: "#ffc26a" },
-                    {
-                      from: 100,
-                      to: 1000,
-                      color_from: "#ea5455",
-                      color_to: "#f86c7d",
-                    },
-                  ];
-            color = valueToIntervalColor(val, intervals);
-          }
-
           const path = makeRingSegmentPath(rInner, rOuter, angleStart, angleEnd);
-          //v1.0.4
-          //const opacity = lc.opacity != null ? lc.opacity : 1.0;
-          const baseOpacity = lc.opacity != null ? lc.opacity : 1.0;
-          // Fade "previous day" segments when keeping across midnight.
-          // Works for both 24h (values[0..23]) and 12h (values[0..11] == AM/PM window).
-          let opacity = baseOpacity;
-          if (lc.keep_across_midnight === true && lc.fade_previous_day === true) {
-            const nowHour = getSystemHour(); // 0..23
-            const f = Number(lc.fade_previous_day_opacity ?? 0.25);
-            const fade = isNaN(f) ? 0.25 : Math.max(0, Math.min(1, f));
 
-            if (cfg.clock_mode === "12h" && n >= 24) {
-              // 12h view but we keep 24 buckets: fade the "other half" (AM vs PM)
-              const isPmNow = nowHour >= 12;
-              const inCurrentHalf = isPmNow ? (i >= 12 && i <= 23) : (i >= 0 && i <= 11);
-              if (!inCurrentHalf) opacity = baseOpacity * fade;
-            } else {
-              // 24h (or 12h with sliced 12 values): fade hours ahead of current time (useful right after midnight)
-              let bucketHour = i;
-              if (cfg.clock_mode === "12h" && n === 12) {
-                const offset = nowHour >= 12 ? 12 : 0;
-                bucketHour = offset + i;
+          const hasOverlay =
+            overlayMask &&
+            overlayMask[i] &&
+            overlayValues &&
+            overlayValues[i] != null &&
+            !isNaN(Number(overlayValues[i]));
+
+          // When Keep is ON and this slot has overlay (future hour), the base (today) must NOT draw here.
+          // This guarantees today's colors never overwrite yesterday overlay in future segments.
+          const skipBase =
+            lc.keep_across_midnight === true &&
+            overlayMask &&
+            overlayMask[i] === true;
+
+          // -----------------------
+          // Base segment (today)
+          // -----------------------
+          if (!skipBase) {
+            // Viktigt: saknas data (null / NaN) -> inget segment ritas
+            if (raw != null && !isNaN(Number(raw))) {
+              const val = Number(raw);
+
+              let color = "#28c76f";
+              const __mask = values && values.__prevMask ? values.__prevMask : null;
+              const __isPrev = __mask && __mask[i] === true;
+
+              if (lc.color_mode === "gradient") {
+                // Use separate min/max for previous-day values so Keep doesn't recolor today's segments
+                const gMin = (__isPrev && prevMin != null) ? prevMin : min;
+                const gMax = (__isPrev && prevMax != null) ? prevMax : max;
+                color = valueToGradientColor(val, gMin, gMax, lc.gradient);
+              } else {
+                const intervals =
+                  lc.intervals && lc.intervals.length
+                    ? lc.intervals
+                    : [
+                        { from: 0, to: 50, color_from: "#28c76f", color_to: "#9be15d" },
+                        { from: 50, to: 100, color_from: "#ff9f43", color_to: "#ffc26a" },
+                        {
+                          from: 100,
+                          to: 1000,
+                          color_from: "#ea5455",
+                          color_to: "#f86c7d",
+                        },
+                      ];
+                color = valueToIntervalColor(val, intervals);
               }
-              if (bucketHour > nowHour) opacity = baseOpacity * fade;
-            }
-          }
 
-          segs += `
+              const baseOpacity = lc.opacity != null ? lc.opacity : 1.0;
+
+              // Fade "previous day" segments when keeping across midnight.
+              // Works for both 24h (values[0..23]) and 12h (values[0..11] == AM/PM window).
+              let opacity = baseOpacity;
+              if (lc.keep_across_midnight === true && lc.fade_previous_day === true) {
+                if (__isPrev) {
+                  const fRaw = Number(lc.fade_previous_day_opacity ?? 0.25);
+                  const fade = isNaN(fRaw) ? 0.25 : Math.max(0, Math.min(1, fRaw));
+                  opacity = baseOpacity * fade;
+                }
+              }
+
+              segs += `
             <path
               d="${path}"
               fill="${color}"
@@ -1323,6 +1698,45 @@ _getClockGeometryLabels(cfg) {
               filter="url(#stats-clock-glow)"
             ></path>
           `;
+            }
+          }
+
+          // -----------------------
+          // Overlay segment (yesterday) for future hours
+          // -----------------------
+          if (hasOverlay) {
+            const oVal = Number(overlayValues[i]);
+            const baseOpacity2 = lc.opacity != null ? lc.opacity : 1.0;
+            let oOpacity = baseOpacity2;
+            if (lc.fade_previous_day === true) {
+              const fRaw = Number(lc.fade_previous_day_opacity ?? 0.25);
+              const fade = isNaN(fRaw) ? 0.25 : Math.max(0, Math.min(1, fRaw));
+              oOpacity = baseOpacity2 * fade;
+            }
+
+            // Use separate range for yesterday overlay if gradient mode
+            const oMin = (overlayMin != null ? overlayMin : min);
+            const oMax = (overlayMax != null ? overlayMax : max);
+
+            let oColor = "#28c76f";
+            if (lc.color_mode === "gradient") {
+              oColor = valueToGradientColor(oVal, oMin, oMax, lc.gradient);
+            } else {
+              const intervals = lc.intervals && lc.intervals.length ? lc.intervals : [];
+              oColor = valueToIntervalColor(oVal, intervals);
+            }
+
+            segs += `
+    <path
+      d="${path}"
+      fill="${oColor}"
+      fill-opacity="${oOpacity}"
+      stroke="rgba(0,0,0,0.25)"
+      stroke-width="0.1"
+      filter="url(#stats-clock-glow)"
+    ></path>
+  `;
+          }
         }
 
         // Stats badges (min / max / avg)
@@ -1438,6 +1852,15 @@ _getClockGeometryLabels(cfg) {
 
         const size = fontSize != null ? Number(fontSize) : 3;
 
+        // Outline is configured per-layer (Layer → Stats markers). We also allow an optional
+        // global default under General, but the layer config takes precedence.
+        const layerSm = layer && layer.cfg && layer.cfg.stats_markers ? layer.cfg.stats_markers : {};
+        const generalSm = cfg && cfg.general && cfg.general.stats_markers ? cfg.general.stats_markers : {};
+        const sm = { ...generalSm, ...layerSm };
+        const outline = !!sm.outline;
+        const outlineColor = sm.outline_color || "rgba(0,0,0,0.65)";
+        const outlineWidth = sm.outline_width != null && !isNaN(Number(sm.outline_width)) ? Number(sm.outline_width) : 0.8;
+
         return `
           <circle
             cx="${pDot.x}"
@@ -1452,6 +1875,7 @@ _getClockGeometryLabels(cfg) {
             alignment-baseline="middle"
             font-size="${size}"
             fill="${color}"
+            ${outline ? `stroke="${outlineColor}" stroke-width="${outlineWidth}" paint-order="stroke fill"` : ""}
           >
             ${textStr}
           </text>
@@ -2098,11 +2522,7 @@ _renderHourLabelsSvg(cfg, r) {
             margin-bottom: 8px;
             padding: 6px 10px;
             border-radius: 8px;
-            background: linear-gradient(
-              90deg,
-              rgba(74, 20, 140, 0.28),
-              rgba(106, 27, 154, 0.18)
-            );
+            background: #03a9f4;
             border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.2));
           }
           .section-header {
@@ -2975,12 +3395,6 @@ _renderHourLabelsSvg(cfg, r) {
                       @input=${(e) =>
                         this._updateLayer(idx, "name", e.target.value)}
                     ></ha-textfield>
-                    <ha-textfield
-                      label="ID"
-                      .value=${layer.id || ""}
-                      @input=${(e) =>
-                        this._updateLayer(idx, "id", e.target.value)}
-                    ></ha-textfield>
                   </div>
 
                   <div class="row-inline">
@@ -3178,6 +3592,7 @@ _renderHourLabelsSvg(cfg, r) {
                     ></ha-textfield>
                     <ha-textfield
                       type="number"
+                      step="1"
                       label="Segment count (optional)"
                       .value=${layer.segment_count ?? ""}
                       @input=${(e) =>
@@ -3191,8 +3606,11 @@ _renderHourLabelsSvg(cfg, r) {
                     ></ha-textfield>
                   </div>
                   <div class="small">
-                    Segment count: total number of slots around the ring.
-                    Only the first <code>values.length</code> slots are filled.
+                    Segment count:
+                    <ul>
+                      <li><b>History / Consumption layers:</b> 0/empty = 1 segment per hour. N (1..60) = split each hour into N sub-segments (minute resolution at 60).</li>
+                      <li><b>Other layers:</b> total number of slots around the ring.</li>
+                    </ul>
                   </div>
 
                   <div class="row-inline" style="margin-top:4px;">
@@ -3444,6 +3862,19 @@ _renderHourLabelsSvg(cfg, r) {
                     ></ha-switch>
                     <span class="small">Show avg</span>
                   </div>
+                  <div class="row-inline" style="margin-top:6px;">
+                    <ha-switch
+                      .checked=${!!sm.outline}
+                      @change=${(e) =>
+                        this._updateLayerStatsMarkers(
+                          idx,
+                          "outline",
+                          e.target.checked
+                        )}
+                    ></ha-switch>
+                    <span class="small">Text outline</span>
+                  </div>
+
 
                   <div class="row-inline">
                     <ha-textfield
@@ -3651,13 +4082,6 @@ _renderHourLabelsSvg(cfg, r) {
               ? html``
               : html`
                   <div class="row-inline">
-                    <ha-textfield
-                      label="ID"
-                      .value=${cl.id || ""}
-                      @input=${(e) =>
-                        this._updateCenterLayer(idx, "id", e.target.value)}
-                    ></ha-textfield>
-
                     <ha-select
                       label="Type"
                       .value=${cl.type || "entity"}
@@ -3917,13 +4341,6 @@ _renderHourLabelsSvg(cfg, r) {
               ? html``
               : html`
                   <div class="row-inline">
-                    <ha-textfield
-                      label="ID"
-                      .value=${cl.id || ""}
-                      @input=${(e) =>
-                        this._updateBottomLayer(idx, "id", e.target.value)}
-                    ></ha-textfield>
-
                     <ha-select
                       label="Type"
                       .value=${cl.type || "static"}
