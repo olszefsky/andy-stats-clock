@@ -3356,7 +3356,7 @@ _renderHourLabelsSvg(cfg, r) {
               <div class="layer-header-title">
                 <span class="layer-header-main">${layer.name || "Layer"}</span>
                 <span class="layer-header-sub">
-                  ID: ${layer.id || "-"} • Type: ${layer.type || "price"}
+                  Type: ${layer.type || "price"}
                 </span>
               </div>
               <div class="header-buttons" @click=${this._stopPropagation}>
