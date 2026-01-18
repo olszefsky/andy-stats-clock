@@ -1,7 +1,7 @@
 (() => {
 /**
  * Andy Stats Clock
- * v1.0.6
+ * v1.0.7 Beta
  * ------------------------------------------------------------------
  * Developed by: Andreas ("AndyBonde") with some help from AI :).
  *
@@ -20,7 +20,7 @@
  */
   const CARD_TAG = "andy-stats-clock";
   const EDITOR_TAG = "andy-stats-clock-editor";
-  const VERSION = "v1.0.6"
+  const VERSION = "v1.0.7 Beta"
 
   console.info(
     `%c Andy Stats Clock %c ${VERSION} loaded `,
@@ -28,7 +28,7 @@
     "color: white; background: #6A1B9A; padding: 4px 8px; border-radius: 0 4px 4px 0;"
   );
 
-  const fireEvent = (node, type, detail, options) => {
+const fireEvent = (node, type, detail, options) => {
     options = options || {};
     detail = detail === null || detail === undefined ? {} : detail;
     const event = new Event(type, {
@@ -53,12 +53,12 @@
     end_angle: 352.5,
     radius: 45,
     layer_gap: 2,
-    hands_center_pivot: true, // shared hub
+    hands_center_pivot: false, // shared hub
     scale: 1, //v1.04
 
     // Outer minute ticks
     outer_ticks: {
-      enabled: true,
+      enabled: false,
     },
 
     // Backwards compatible sweeper (hour hand)
@@ -74,30 +74,27 @@
       enabled: true,
       use_system_time: true,
       entity: "",
-      color: "#03a9f4",
+      color: "#FFFFFF",
       width: 1.5,
-      opacity: 0.8,
-      show_dash: false,
-      length_scale: 0.75,
+      opacity: 1,
+      length_scale: 1.0,
     },
 
     // Minute hand
     minute_sweeper: {
-      enabled: true,
+      enabled: false,
       color: "#FFFFFF",
       width: 1.2,
-      opacity: 0.8,
-      show_dash: false,
-      length_scale: 0.9,
+      opacity: 1,
+      length_scale: 1.0,
     },
 
     // Second hand
     second_sweeper: {
-      enabled: true,
-      color: "#f50049",
+      enabled: false,
+      color: "#FF4081",
       width: 1.0,
       opacity: 1,
-      show_dash: false,
       length_scale: 1.0,
     },
 
@@ -279,13 +276,54 @@
 
   function parseAttributeArray(stateObj, attribute, valuePath) {
     if (!stateObj) return [];
-    const attr = attribute || "today";
-    const raw = stateObj.attributes[attr];
+
+    // Nord Pool price arrays exist in different integrations / setups:
+    // - HACS custom-components/nordpool: attributes often include "today", "tomorrow", "raw_today", "raw_tomorrow".
+    // - HA Core Nord Pool (and many template sensors): users commonly store the list in an attribute called "data".
+    // We auto-detect a sensible attribute if the configured one is missing.
+    const attrs = (stateObj.attributes || {});
+    const preferred = attribute && String(attribute).trim() ? String(attribute).trim() : null;
+    const candidates = preferred
+      ? [preferred, preferred === "today" ? "data" : "today", preferred === "data" ? "today" : "data", "raw_today", "raw_tomorrow", "tomorrow"]
+      : ["today", "data", "raw_today", "raw_tomorrow", "tomorrow"];
+
+    let raw = null;
+    let usedAttr = null;
+    for (const a of candidates) {
+      if (a && Array.isArray(attrs[a])) {
+        raw = attrs[a];
+        usedAttr = a;
+        break;
+      }
+    }
     if (!Array.isArray(raw)) return [];
-    if (!valuePath) return raw.map((v) => (v == null ? null : Number(v)));
+
+    // If no explicit valuePath is configured and items are objects,
+    // try common numeric keys (keeps backwards-compat, but helps template-sensors using {price: ...}).
+    let vp = valuePath && String(valuePath).trim() ? String(valuePath).trim() : null;
+    if (!vp) {
+      const firstObj = raw.find((x) => x && typeof x === "object" && !Array.isArray(x));
+      if (firstObj) {
+        const commonKeys = ["value", "price", "amount", "cost", "total", "avg", "average"];
+        for (const k of commonKeys) {
+          if (k in firstObj) {
+            const n = Number(firstObj[k]);
+            if (!isNaN(n)) {
+              vp = k;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!vp) {
+      return raw.map((v) => (v == null ? null : Number(v)));
+    }
+
     return raw.map((item) => {
-      if (item && typeof item === "object" && valuePath in item) {
-        const val = item[valuePath];
+      if (item && typeof item === "object" && vp in item) {
+        const val = item[vp];
         return val == null ? null : Number(val);
       }
       return item == null ? null : Number(item);
@@ -2522,7 +2560,11 @@ _renderHourLabelsSvg(cfg, r) {
             margin-bottom: 8px;
             padding: 6px 10px;
             border-radius: 8px;
-            background: #03a9f4;
+            background: linear-gradient(
+              90deg,
+              rgba(74, 20, 140, 0.28),
+              rgba(106, 27, 154, 0.18)
+            );
             border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.2));
           }
           .section-header {
@@ -3356,7 +3398,7 @@ _renderHourLabelsSvg(cfg, r) {
               <div class="layer-header-title">
                 <span class="layer-header-main">${layer.name || "Layer"}</span>
                 <span class="layer-header-sub">
-                  Type: ${layer.type || "price"}
+                  ID: ${layer.id || "-"} • Type: ${layer.type || "price"}
                 </span>
               </div>
               <div class="header-buttons" @click=${this._stopPropagation}>
@@ -3394,6 +3436,12 @@ _renderHourLabelsSvg(cfg, r) {
                       .value=${layer.name || ""}
                       @input=${(e) =>
                         this._updateLayer(idx, "name", e.target.value)}
+                    ></ha-textfield>
+                    <ha-textfield
+                      label="ID"
+                      .value=${layer.id || ""}
+                      @input=${(e) =>
+                        this._updateLayer(idx, "id", e.target.value)}
                     ></ha-textfield>
                   </div>
 
@@ -3707,8 +3755,8 @@ _renderHourLabelsSvg(cfg, r) {
                               <div class="row-inline">
                                 <ha-textfield
                                   type="number"
-                                  step="0.1"
                                   label="From"
+                                  step="0.1"
                                   .value=${intv.from ?? 0}
                                   @input=${(e) =>
                                     this._updateLayerIntervalField(
@@ -4084,6 +4132,13 @@ _renderHourLabelsSvg(cfg, r) {
               ? html``
               : html`
                   <div class="row-inline">
+                    <ha-textfield
+                      label="ID"
+                      .value=${cl.id || ""}
+                      @input=${(e) =>
+                        this._updateCenterLayer(idx, "id", e.target.value)}
+                    ></ha-textfield>
+
                     <ha-select
                       label="Type"
                       .value=${cl.type || "entity"}
@@ -4343,6 +4398,13 @@ _renderHourLabelsSvg(cfg, r) {
               ? html``
               : html`
                   <div class="row-inline">
+                    <ha-textfield
+                      label="ID"
+                      .value=${cl.id || ""}
+                      @input=${(e) =>
+                        this._updateBottomLayer(idx, "id", e.target.value)}
+                    ></ha-textfield>
+
                     <ha-select
                       label="Type"
                       .value=${cl.type || "static"}
